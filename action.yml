@@ -1,0 +1,38 @@
+name: Set up onesie
+description: Install a onesie release, checked against its checksum and build provenance, and add it to PATH.
+author: frodi-karlsson
+
+branding:
+  icon: download
+  color: purple
+
+inputs:
+  version:
+    description: The onesie release to install, such as 0.12.0 or v0.12.0, or latest.
+    default: latest
+  verify-provenance:
+    description: Check the archive against the provenance of onesie's release workflow with gh attestation verify.
+    default: 'true'
+  release-base-url:
+    description: Where the archives and checksums.txt live, for a mirror. Empty means the GitHub release of version.
+    default: ''
+  token:
+    description: The token used to find the latest release and to verify provenance.
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The onesie version installed, without the v, as 0.12.0.
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_VERIFY_PROVENANCE: ${{ inputs.verify-provenance }}
+        INPUT_RELEASE_BASE_URL: ${{ inputs.release-base-url }}
+        GH_TOKEN: ${{ inputs.token }}
