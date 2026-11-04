@@ -95,6 +95,29 @@ onesie asks an inference provider with your own key. Store the key as a reposito
 
 TypeSafe is the default, read from `TYPESAFE_API_KEY`. For another provider, set `ONESIE_PROVIDER` beside its key variable, as in `ONESIE_PROVIDER: openrouter` with `OPENROUTER_API_KEY`. onesie's reference lists [every provider and its key variable](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#profiles-and-providers). A workflow needs no profile, since onesie reads the key variable when no profile exists.
 
+### Your own server
+
+`ONESIE_BASE_URL` points onesie at another server that speaks a provider's API, such as [ollaya](https://github.com/ollaya-dev/ollaya), and then no key is needed. A server that does want a key answers 401, which run mode reports as `no-answer`. This needs onesie 0.13.0 or later, so a step that pins `version` pins at least that.
+
+A server run as a service container is reached at `http://localhost:PORT` when the job maps that port under `services` and runs on the runner itself, not in a container. Plain http to localhost is allowed, and plain http to any other host is refused.
+
+```yaml
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      decider:
+        image: YOUR_SERVER_IMAGE
+        ports: ['11435:11435']
+    steps:
+      - uses: frodi-karlsson/setup-onesie@v1
+        env:
+          ONESIE_BASE_URL: http://localhost:11435
+        with:
+          file: pr-why
+          state: ${{ github.event.pull_request.body }}
+```
+
 ## Example: label new issues
 
 This workflow labels each new issue as a bug, a feature request, a question or a docs problem. An issue onesie is unsure about gets `needs-triage`, so a person sorts it instead of a guess.
