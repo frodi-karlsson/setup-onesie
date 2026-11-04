@@ -194,10 +194,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Lint the install script
+      - name: Lint the scripts
         run: |
           shellcheck --version
-          shellcheck install.sh
+          shellcheck -x install.sh run.sh lib.sh
 
       - name: Install actionlint
         env:

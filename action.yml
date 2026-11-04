@@ -19,15 +19,48 @@ inputs:
   token:
     description: The token used to find the latest release and to verify provenance.
     default: ${{ github.token }}
+  file:
+    description: Starts run mode with a question file name or path, as onesie -f takes it, such as pr-why or moderation.
+    default: ''
+  questions:
+    description: Starts run mode with a question file's YAML, inline. Set file or questions, not both.
+    default: ''
+  state:
+    description: The text to ask about in run mode.
+    default: ''
+  on-fail:
+    description: What a clear no does to the step in run mode, error, warn or continue.
+    default: error
+  on-unsure:
+    description: What an unsure answer does to the step in run mode, error, warn or continue.
+    default: warn
 
 outputs:
   version:
     description: The onesie version installed, without the v, as 0.12.0.
     value: ${{ steps.install.outputs.version }}
+  result:
+    description: In run mode, pass for exit 0, fail for 1, unsure for 7 and no-answer for any other exit.
+    value: ${{ steps.run.outputs.result }}
+  exit-code:
+    description: In run mode, the exit code of onesie.
+    value: ${{ steps.run.outputs.exit-code }}
+  answer:
+    description: In run mode, the line onesie -o json wrote, for scores and picks.
+    value: ${{ steps.run.outputs.answer }}
 
 runs:
   using: composite
   steps:
+    - id: check
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" check
+      env:
+        INPUT_FILE: ${{ inputs.file }}
+        INPUT_QUESTIONS: ${{ inputs.questions }}
+        INPUT_STATE: ${{ inputs.state }}
+        INPUT_ON_FAIL: ${{ inputs.on-fail }}
+        INPUT_ON_UNSURE: ${{ inputs.on-unsure }}
     - id: install
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/install.sh"
@@ -36,3 +69,13 @@ runs:
         INPUT_VERIFY_PROVENANCE: ${{ inputs.verify-provenance }}
         INPUT_RELEASE_BASE_URL: ${{ inputs.release-base-url }}
         GH_TOKEN: ${{ inputs.token }}
+    - id: run
+      if: inputs.file != '' || inputs.questions != ''
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      env:
+        INPUT_FILE: ${{ inputs.file }}
+        INPUT_QUESTIONS: ${{ inputs.questions }}
+        INPUT_STATE: ${{ inputs.state }}
+        INPUT_ON_FAIL: ${{ inputs.on-fail }}
+        INPUT_ON_UNSURE: ${{ inputs.on-unsure }}

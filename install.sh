@@ -4,6 +4,9 @@
 repo="frodi-karlsson/onesie"
 signer_workflow="frodi-karlsson/onesie/.github/workflows/release.yml"
 
+# shellcheck source=lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh" || exit 1
+
 main() {
 	set -euo pipefail
 
@@ -184,15 +187,6 @@ smoke_test() {
 	reported="$("$binary" --version)" || die "$binary --version failed"
 	[ "${reported%%$'\n'*}" = "onesie ${version#v}" ] ||
 		die "$binary --version does not report ${version#v}"
-}
-
-die() {
-	local message="$*"
-	message="${message//%/%25}"
-	message="${message//$'\r'/%0D}"
-	message="${message//$'\n'/%0A}"
-	echo "::error::$message"
-	exit 1
 }
 
 main "$@"
