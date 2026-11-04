@@ -54,6 +54,52 @@ jobs:
 - The issue text reaches the shell through `env`, never through `${{ }}` inside `run`. onesie can only answer with one of the labels, so an issue written to trick the model can at most get the wrong label.
 - Anyone who can open an issue starts one API call on your key. On a busy repository, add a condition such as `if: github.event.issue.author_association != 'NONE'`.
 
+## Example: hide abusive comments with a calibrated check
+
+onesie ships checks that are already calibrated on labelled examples, so their cuts are measured, not guessed. This workflow runs the built in `moderation` check on every new comment. A clearly hostile or spam comment is hidden, and a borderline one, such as sarcasm or a blunt complaint, gets the `needs-moderation` label for a person.
+
+```yaml
+name: Moderate comments
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: frodi-karlsson/setup-onesie@v1
+      - name: Check the comment
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          COMMENT: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.node_id }}
+          HIDE: >-
+            mutation($id: ID!, $classifier: ReportedContentClassifiers!) {
+            minimizeComment(input: {subjectId: $id, classifier: $classifier}) { clientMutationId } }
+        run: |
+          status=0
+          answer="$(onesie -f moderation -o json --state "$COMMENT")" || status=$?
+          case $status in
+            0) ;;
+            1)
+              classifier="$(jq -r 'if .spam.value >= 0.5 then "SPAM" else "ABUSE" end' <<<"$answer")"
+              gh api graphql -f id="$COMMENT_ID" -f classifier="$classifier" -f query="$HIDE"
+              ;;
+            7) gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label needs-moderation ;;
+            *) echo "::error::onesie gave no answer, exit $status"; exit 1 ;;
+          esac
+```
+
+- Exit 0 means the comment is fine, 1 that the check is sure it is hostile or spam, and 7 that it is unsure. Any other exit means no answer arrived, so the step fails instead of guessing.
+- The other built in checks work the same way: `personal-data`, `prompt-injection` and `shell-safety`. [onesie's examples README](https://github.com/frodi-karlsson/onesie/blob/main/examples/README.md) says what each one asks and how its cuts were measured.
+
 ## Inputs
 
 | Input | Default | Meaning |
