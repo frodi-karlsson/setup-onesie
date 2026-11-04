@@ -13,6 +13,12 @@ A GitHub Action that puts a verified [onesie](https://github.com/frodi-karlsson/
     TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
 ```
 
+## API key
+
+onesie asks an inference provider with your own key. Store the key as a repository secret, under Settings, Secrets and variables, Actions, and pass it to the step that runs onesie through `env`, as above.
+
+TypeSafe is the default, read from `TYPESAFE_API_KEY`. For another provider, set `ONESIE_PROVIDER` beside its key variable, as in `ONESIE_PROVIDER: openrouter` with `OPENROUTER_API_KEY`. onesie's reference lists [every provider and its key variable](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#profiles-and-providers). Profiles keep a key in a desktop keychain, so a workflow needs none.
+
 ## Example: label new issues
 
 This workflow labels each new issue as a bug, a feature request, a question or a docs problem. An issue onesie is unsure about gets `needs-triage`, so a person sorts it instead of a guess.
