@@ -2,22 +2,93 @@
 
 Ask a System One model a question in your workflows, and get back an answer they can act on: a yes or no with a probability, one of your labels, or a rating. Gate a step on it, label something, or send a borderline case to a person. The answers come from [onesie](https://github.com/frodi-karlsson/onesie), a command line tool that asks System One models such as TypeSafe's Jev, with cuts you can calibrate on your own examples.
 
-This Action installs onesie on any GitHub hosted runner, Linux, macOS or Windows, on amd64 or arm64. The download is checked against its release checksum and build provenance, and refused when either check fails.
+This Action installs onesie on any GitHub hosted runner, Linux, macOS or Windows, on amd64 or arm64. The download is checked against its release checksum and build provenance, and refused when either check fails. Given a question, it then asks it about one text and passes or fails the step on the answer, with no shell script.
 
 ## Usage
 
 ```yaml
 - uses: frodi-karlsson/setup-onesie@v1
-  with:
-    version: 0.12.0
-- run: onesie -f moderation -i lines < comments.txt
   env:
     TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+  with:
+    file: moderation
+    state: ${{ github.event.comment.body }}
+```
+
+This fails the step when the comment is hostile or spam, and warns when onesie is unsure. Without `file` or `questions`, the Action only installs onesie, as in [Calling onesie directly](#calling-onesie-directly).
+
+## Run mode
+
+Setting `file` or `questions` starts run mode. The Action asks the question about `state` and sets `result`, `exit-code` and `answer`.
+
+- `file` takes a question file name or path, as `onesie -f` does. A bare name such as `pr-why` loads `.onesie/questions/pr-why.yaml` from the checkout, and onesie also ships the sets `moderation`, `personal-data`, `prompt-injection` and `shell-safety`.
+- `questions` takes a question file's YAML inline. Set `file` or `questions`, not both.
+- `state` is required in run mode, and an empty one is refused. It reaches onesie through the environment, never through a shell, so `${{ }}` is safe in it.
+- `result` is `pass` for exit 0, `fail` for 1, `unsure` for 7, and `no-answer` for any other exit, such as a missing key or a failed API call.
+
+`on-fail` says what a clear no does to the step, and `on-unsure` the same for unsure. Each takes `error`, which fails the step with an error annotation, `warn`, which passes it with a warning, or `continue`, which passes it with no annotation. The defaults are `error` for `on-fail` and `warn` for `on-unsure`. A no answer always fails the step, whatever the two say, so a later step never acts on an answer that did not arrive.
+
+### A plain gate
+
+The defaults make a gate. This fails the job when the question in `.onesie/questions/pr-why.yaml` clearly fails, and leaves a warning when onesie is unsure:
+
+```yaml
+- uses: actions/checkout@v7
+- uses: frodi-karlsson/setup-onesie@v1
+  env:
+    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+  with:
+    file: pr-why
+    state: ${{ github.event.pull_request.body }}
+```
+
+### Acting on result
+
+Set both policies to `continue` to decide in a later step. This labels an issue for a moderator unless the moderation set passes it:
+
+```yaml
+- uses: frodi-karlsson/setup-onesie@v1
+  id: moderation
+  env:
+    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+  with:
+    file: moderation
+    state: ${{ github.event.issue.body }}
+    on-fail: continue
+    on-unsure: continue
+- name: Ask a moderator to look
+  if: steps.moderation.outputs.result != 'pass'
+  env:
+    GH_TOKEN: ${{ github.token }}
+    ISSUE: ${{ github.event.issue.number }}
+  run: gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label needs-moderation
+```
+
+### Reading a pick from answer
+
+`answer` holds onesie's `-o json` line. Read a field with `fromJSON`. A pick's `value` is the option picked, and with a `fallback` set, its `decision` is that option, or the fallback when the confidence fell short of `min_confidence`:
+
+```yaml
+- uses: frodi-karlsson/setup-onesie@v1
+  id: area
+  env:
+    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+  with:
+    questions: |
+      area:
+        ask: which part of the project does this change touch
+        pick: [cli, api, docs]
+        min_confidence: 0.7
+        fallback: unsure
+    state: ${{ github.event.pull_request.title }}
+- run: echo "This change touches $AREA"
+  env:
+    AREA: ${{ fromJSON(steps.area.outputs.answer).area.decision }}
 ```
 
 ## API key
 
-onesie asks an inference provider with your own key. Store the key as a repository secret, under Settings, Secrets and variables, Actions, and pass it to the step that runs onesie through `env`, as above.
+onesie asks an inference provider with your own key. Store the key as a repository secret, under Settings, Secrets and variables, Actions, and pass it to the step that runs onesie through `env`, as above. In run mode that is the `uses` step itself.
 
 TypeSafe is the default, read from `TYPESAFE_API_KEY`. For another provider, set `ONESIE_PROVIDER` beside its key variable, as in `ONESIE_PROVIDER: openrouter` with `OPENROUTER_API_KEY`. onesie's reference lists [every provider and its key variable](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#profiles-and-providers). A workflow needs no profile, since onesie reads the key variable when no profile exists.
 
@@ -39,27 +110,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: frodi-karlsson/setup-onesie@v1
-      - name: Label the issue
+        id: kind
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        with:
+          questions: |
+            kind:
+              ask: what kind of issue is this
+              pick:
+                bug: something is broken or behaves wrong
+                feature: a request for new behaviour
+                question: asking how to use it
+                docs: a problem in the docs
+              min_confidence: 0.7
+              fallback: needs-triage
+          state: |
+            ${{ github.event.issue.title }}
+
+            ${{ github.event.issue.body }}
+      - name: Label the issue
+        env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
-          TITLE: ${{ github.event.issue.title }}
-          BODY: ${{ github.event.issue.body }}
-        run: |
-          label="$(onesie --ask kind='what kind of issue is this' \
-            --pick bug,feature,question,docs \
-            --desc bug='something is broken or behaves wrong' \
-            --desc feature='a request for new behaviour' \
-            --desc question='asking how to use it' \
-            --desc docs='a problem in the docs' \
-            --min-confidence 0.7 --fallback needs-triage -r \
-            --state "$TITLE"$'\n\n'"$BODY")"
-          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label "$label"
+          LABEL: ${{ fromJSON(steps.kind.outputs.answer).kind.decision }}
+        run: gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label "$LABEL"
 ```
 
 - The five labels must exist in the repository.
-- The issue text reaches the shell through `env`, never through `${{ }}` inside `run`. onesie can only answer with one of the labels, so an issue written to trick the model can at most get the wrong label.
+- The issue text reaches onesie through `with`, and the label reaches the shell through `env`, never through `${{ }}` inside `run`. onesie can only answer with one of the labels, so an issue written to trick the model can at most get the wrong label.
 - When the API call fails, the step fails and the issue stays unlabelled.
 - Anyone who can open an issue starts one API call on your key. On a busy repository, add a condition such as `if: contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.issue.author_association)`.
 
@@ -107,27 +185,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: frodi-karlsson/setup-onesie@v1
       - name: Ask whether the description says why
+        uses: frodi-karlsson/setup-onesie@v1
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-          BODY: ${{ github.event.pull_request.body }}
-        run: |
-          if [ -z "${BODY//[[:space:]]/}" ]; then
-            echo "::error::The description is empty, so it does not say why this change is needed."
-            exit 1
-          fi
-          status=0
-          onesie -f pr-why -q --state "$BODY" || status=$?
-          case $status in
-            0) ;;
-            1) echo "::error::The description does not say why this change is needed."; exit 1 ;;
-            7) echo "::warning::onesie is unsure whether the description says why. A reviewer should check." ;;
-            *) echo "::error::onesie gave no answer, exit $status"; exit 1 ;;
-          esac
+        with:
+          file: pr-why
+          state: ${{ github.event.pull_request.body }}
 ```
 
-- Exit 0 means the question passed, 1 that it clearly failed, and 7 that onesie is unsure. Any other exit means no answer arrived, so the step fails instead of guessing.
+- A clear no fails the step, and an unsure answer leaves a warning so a reviewer checks. A no answer fails the step instead of guessing.
+- An empty description is refused as an empty `state`, so the step fails before any API call.
+
+## Calling onesie directly
+
+The binary stays on `PATH` for the rest of the job, in run mode or not, so a later step can call onesie with any flags, as to read a stream of records:
+
+```yaml
+- uses: frodi-karlsson/setup-onesie@v1
+  with:
+    version: 0.12.0
+- run: onesie -f moderation -i lines < comments.txt
+  env:
+    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+```
+
+onesie's exit codes are 0 when the question passed, 1 when it clearly failed and 7 when onesie is unsure. Any other exit means no answer arrived, so a script should fail instead of guessing. onesie's [reference](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#exit-codes) lists them all.
 
 ## Inputs
 
@@ -137,12 +220,20 @@ jobs:
 | `verify-provenance` | `true` | Check the archive with `gh attestation verify`. Set it to `false` to skip the check |
 | `release-base-url` | empty | Where the archives and `checksums.txt` live, for a mirror. Empty means the GitHub release of `version` |
 | `token` | `${{ github.token }}` | Used to find the latest release and to verify provenance |
+| `file` | empty | Starts run mode with a question file name or path, as `onesie -f` takes it, such as `pr-why` or `moderation` |
+| `questions` | empty | Starts run mode with a question file's YAML, inline |
+| `state` | empty | The text to ask about. Required in run mode and refused outside it |
+| `on-fail` | `error` | What a clear no does to the step in run mode: `error`, `warn` or `continue` |
+| `on-unsure` | `warn` | What an unsure answer does to the step in run mode: `error`, `warn` or `continue` |
 
 ## Outputs
 
-| Output | Meaning |
-|---|---|
-| `version` | The version installed, without the `v`, as `0.12.0` |
+| Output | Example | Meaning |
+|---|---|---|
+| `version` | `0.12.0` | The version installed, without the `v` |
+| `result` | `unsure` | In run mode, `pass` for exit 0, `fail` for 1, `unsure` for 7 and `no-answer` for any other exit |
+| `exit-code` | `7` | In run mode, onesie's exit code |
+| `answer` | `{"model":"jev-latest","why":{"value":0.52}}` | In run mode, onesie's `-o json` line, for scores and picks |
 
 ## Verification
 
