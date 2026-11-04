@@ -186,6 +186,432 @@ jobs:
           cat "$out"
           grep -qF "$EXPECTED" "$out"
 
+  run-outcomes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the mocked answers
+        shell: bash
+        run: |
+          echo '{"why":0.9}' >"$RUNNER_TEMP/pass.json"
+          echo '{"why":0.1}' >"$RUNNER_TEMP/fail.json"
+          echo '{"why":0.5}' >"$RUNNER_TEMP/unsure.json"
+
+      - name: Ask with a passing answer
+        id: pass
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/pass.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+
+      - name: Ask with a failing answer under on-fail error
+        id: fail-error
+        continue-on-error: true
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/fail.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-fail: error
+
+      - name: Ask with a failing answer under on-fail warn
+        id: fail-warn
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/fail.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-fail: warn
+
+      - name: Ask with a failing answer under on-fail continue
+        id: fail-continue
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/fail.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-fail: continue
+
+      - name: Ask with an unsure answer under on-unsure error
+        id: unsure-error
+        continue-on-error: true
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/unsure.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-unsure: error
+
+      - name: Ask with an unsure answer under on-unsure warn
+        id: unsure-warn
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/unsure.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-unsure: warn
+
+      - name: Ask with an unsure answer under on-unsure continue
+        id: unsure-continue
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/unsure.json
+        with:
+          version: 0.12.0
+          questions: |
+            assert: why.value >= 0.7
+            abstain_if: why.value >= 0.4
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+          on-unsure: continue
+
+      - name: Check the outcomes and outputs
+        shell: bash
+        env:
+          PASS: ${{ steps.pass.outcome }} ${{ steps.pass.outputs.result }} ${{ steps.pass.outputs.exit-code }}
+          FAIL_ERROR: ${{ steps.fail-error.outcome }} ${{ steps.fail-error.outputs.result }} ${{ steps.fail-error.outputs.exit-code }}
+          FAIL_WARN: ${{ steps.fail-warn.outcome }} ${{ steps.fail-warn.outputs.result }} ${{ steps.fail-warn.outputs.exit-code }}
+          FAIL_CONTINUE: ${{ steps.fail-continue.outcome }} ${{ steps.fail-continue.outputs.result }} ${{ steps.fail-continue.outputs.exit-code }}
+          UNSURE_ERROR: ${{ steps.unsure-error.outcome }} ${{ steps.unsure-error.outputs.result }} ${{ steps.unsure-error.outputs.exit-code }}
+          UNSURE_WARN: ${{ steps.unsure-warn.outcome }} ${{ steps.unsure-warn.outputs.result }} ${{ steps.unsure-warn.outputs.exit-code }}
+          UNSURE_CONTINUE: ${{ steps.unsure-continue.outcome }} ${{ steps.unsure-continue.outputs.result }} ${{ steps.unsure-continue.outputs.exit-code }}
+          PASS_ANSWER: ${{ steps.pass.outputs.answer }}
+          PASS_VERSION: ${{ steps.pass.outputs.version }}
+        run: |
+          status=0
+          expect() {
+            if [ "$2" = "$3" ]; then
+              echo "$1: $2"
+            else
+              echo "$1 is $2, but should be $3"
+              status=1
+            fi
+          }
+          expect pass "$PASS" "success pass 0"
+          expect fail-error "$FAIL_ERROR" "failure fail 1"
+          expect fail-warn "$FAIL_WARN" "success fail 1"
+          expect fail-continue "$FAIL_CONTINUE" "success fail 1"
+          expect unsure-error "$UNSURE_ERROR" "failure unsure 7"
+          expect unsure-warn "$UNSURE_WARN" "success unsure 7"
+          expect unsure-continue "$UNSURE_CONTINUE" "success unsure 7"
+          expect "the pass answer" "$PASS_ANSWER" '{"model":"jev-latest","why":{"value":0.9}}'
+          expect "the version" "$PASS_VERSION" "0.12.0"
+          if compgen -G "$RUNNER_TEMP/setup-onesie.*"; then
+            echo "a temp directory was left in RUNNER_TEMP"
+            status=1
+          fi
+          exit "$status"
+
+  run-pick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the mocked answer
+        run: echo '{"kind":{"value":"bug","confidence":0.9}}' >"$RUNNER_TEMP/pick.json"
+
+      - name: Ask a pick question
+        id: pick
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/pick.json
+        with:
+          version: 0.12.0
+          questions: |
+            kind:
+              ask: what kind of issue is this
+              pick: [bug, feature, question, docs]
+          state: The app crashes when I open a file with an empty name.
+
+      - name: Check the decision in answer
+        env:
+          RESULT: ${{ steps.pick.outputs.result }}
+          KIND: ${{ fromJSON(steps.pick.outputs.answer).kind.value }}
+          CONFIDENCE: ${{ fromJSON(steps.pick.outputs.answer).kind.confidence }}
+        run: |
+          echo "result $RESULT, kind $KIND, confidence $CONFIDENCE"
+          [ "$RESULT" = "pass" ]
+          [ "$KIND" = "bug" ]
+          [ "$CONFIDENCE" = "0.9" ]
+
+  run-file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the mocked answers
+        run: |
+          echo '{"hostile":0.05,"spam":0.02,"tone":"civil"}' >"$RUNNER_TEMP/civil.json"
+          echo '{"hostile":0.95,"spam":0.02,"tone":"abusive"}' >"$RUNNER_TEMP/hostile.json"
+
+      - name: Ask the moderation set about a civil comment
+        id: civil
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/civil.json
+        with:
+          version: 0.12.0
+          file: moderation
+          state: Thanks for the fix, it works for me now.
+
+      - name: Ask the moderation set about a hostile comment
+        id: hostile
+        continue-on-error: true
+        uses: ./
+        env:
+          ONESIE_MOCK: ${{ runner.temp }}/hostile.json
+        with:
+          version: 0.12.0
+          file: moderation
+          state: Only an idiot would write code like this.
+
+      - name: Check the outcomes and outputs
+        env:
+          CIVIL: ${{ steps.civil.outcome }} ${{ steps.civil.outputs.result }} ${{ steps.civil.outputs.exit-code }}
+          HOSTILE: ${{ steps.hostile.outcome }} ${{ steps.hostile.outputs.result }} ${{ steps.hostile.outputs.exit-code }}
+          TONE: ${{ fromJSON(steps.hostile.outputs.answer).tone.value }}
+        run: |
+          echo "civil: $CIVIL"
+          echo "hostile: $HOSTILE, tone $TONE"
+          [ "$CIVIL" = "success pass 0" ]
+          [ "$HOSTILE" = "failure fail 1" ]
+          [ "$TONE" = "abusive" ]
+
+  run-no-answer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ask with no key and no mock
+        id: ask
+        continue-on-error: true
+        uses: ./
+        with:
+          version: 0.12.0
+          file: moderation
+          state: Thanks for the fix.
+          on-fail: continue
+          on-unsure: continue
+
+      - name: Check that the step failed with no answer
+        env:
+          OUTCOME: ${{ steps.ask.outcome }}
+          RESULT: ${{ steps.ask.outputs.result }}
+          EXIT_CODE: ${{ steps.ask.outputs.exit-code }}
+        run: |
+          echo "$OUTCOME, $RESULT, exit $EXIT_CODE"
+          [ "$OUTCOME" = "failure" ]
+          [ "$RESULT" = "no-answer" ]
+          [ "$EXIT_CODE" = "2" ]
+
+      - name: Check the message
+        env:
+          INPUT_FILE: moderation
+          INPUT_STATE: Thanks for the fix.
+          INPUT_ON_FAIL: continue
+          INPUT_ON_UNSURE: continue
+          EXPECTED: 'onesie gave no answer, exit 2%0Aonesie: no API key'
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./run.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have failed"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+  run-refusals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ask with both file and questions
+        id: both
+        continue-on-error: true
+        uses: ./
+        with:
+          file: moderation
+          questions: |
+            why:
+              ask: does this explain why
+          state: Thanks for the fix.
+
+      - name: Ask with no state
+        id: no-state
+        continue-on-error: true
+        uses: ./
+        with:
+          file: moderation
+
+      - name: Set state without run mode
+        id: state-only
+        continue-on-error: true
+        uses: ./
+        with:
+          state: Thanks for the fix.
+
+      - name: Set on-fail without run mode
+        id: policy-only
+        continue-on-error: true
+        uses: ./
+        with:
+          on-fail: warn
+
+      - name: Ask with a bad policy value
+        id: bad-policy
+        continue-on-error: true
+        uses: ./
+        with:
+          file: moderation
+          state: Thanks for the fix.
+          on-unsure: ignore
+
+      - name: Check that all were refused before the install
+        env:
+          OUTCOMES: >-
+            ${{ steps.both.outcome }} ${{ steps.no-state.outcome }} ${{ steps.state-only.outcome }}
+            ${{ steps.policy-only.outcome }} ${{ steps.bad-policy.outcome }}
+          VERSIONS: >-
+            ${{ steps.both.outputs.version }}${{ steps.no-state.outputs.version }}${{ steps.state-only.outputs.version }}${{ steps.policy-only.outputs.version }}${{ steps.bad-policy.outputs.version }}
+        run: |
+          echo "outcomes: $OUTCOMES"
+          [ "$OUTCOMES" = "failure failure failure failure failure" ]
+          [ -z "$VERSIONS" ]
+          if command -v onesie; then exit 1; fi
+
+      - name: Check the message for both file and questions
+        env:
+          INPUT_FILE: moderation
+          INPUT_QUESTIONS: 'why: {ask: does this explain why}'
+          INPUT_STATE: Thanks for the fix.
+          EXPECTED: file and questions are both set
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if bash ./run.sh check >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message for no state
+        env:
+          INPUT_FILE: moderation
+          EXPECTED: state is empty. Run mode needs the text to ask about in state
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if bash ./run.sh check >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message for state without run mode
+        env:
+          INPUT_STATE: Thanks for the fix.
+          EXPECTED: state is set without file or questions
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if bash ./run.sh check >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message for on-fail without run mode
+        env:
+          INPUT_ON_FAIL: warn
+          EXPECTED: on-fail is set without file or questions
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if bash ./run.sh check >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message for a bad policy value
+        env:
+          INPUT_FILE: moderation
+          INPUT_STATE: Thanks for the fix.
+          INPUT_ON_UNSURE: ignore
+          EXPECTED: on-unsure must be error, warn or continue, not ignore
+        run: |
+          out="$RUNNER_TEMP/run.out"
+          if bash ./run.sh check >"$out" 2>&1; then
+            cat "$out"
+            echo "run.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
   lint:
     runs-on: ubuntu-latest
     steps:
