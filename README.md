@@ -1,6 +1,6 @@
 # setup-onesie
 
-Ask a System One model a question about an issue, a pull request or a comment, and get back an answer a workflow can act on: a yes or no with a probability, one of your labels, or a rating. Label new issues, fail a pull request whose description says nothing, or send a borderline comment to a person. The answers come from [onesie](https://github.com/frodi-karlsson/onesie), a command line tool that asks System One models such as TypeSafe's Jev, with cuts you can calibrate on your own examples.
+Ask a System One model a question in your workflows, and get back an answer they can act on: a yes or no with a probability, one of your labels, or a rating. Gate a step on it, label something, or send a borderline case to a person. The answers come from [onesie](https://github.com/frodi-karlsson/onesie), a command line tool that asks System One models such as TypeSafe's Jev, with cuts you can calibrate on your own examples.
 
 This Action installs onesie on any GitHub hosted runner, Linux, macOS or Windows, on amd64 or arm64. The download is checked against its release checksum and build provenance, and refused when either check fails.
 

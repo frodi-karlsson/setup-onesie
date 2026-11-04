@@ -1,5 +1,5 @@
-name: Ask a System One model about issues and PRs
-description: Ask a yes or no, pick or rate question about an issue, a pull request or a comment, and act on the answer. Installs the onesie CLI, verified.
+name: 'onesie: Ask a System One model'
+description: Ask a System One model a yes or no, pick or rate question in your workflows, gate on cuts calibrated on your own examples, and act on the answer.
 author: frodi-karlsson
 
 branding:
