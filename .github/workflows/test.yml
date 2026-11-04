@@ -108,6 +108,22 @@ jobs:
           [ "$OUTCOME" = "failure" ]
           if command -v onesie; then exit 1; fi
 
+      - name: Check the refusal message
+        env:
+          INPUT_VERSION: 0.12.0
+          INPUT_RELEASE_BASE_URL: file://${{ runner.temp }}/mirror
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: the sha256 of onesie_0.12.0_linux_amd64.tar.gz is
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
   bad-inputs:
     runs-on: ubuntu-latest
     steps:
@@ -138,6 +154,37 @@ jobs:
         run: |
           [ "$UNKNOWN" = "failure" ]
           [ "$LATEST_MIRROR" = "failure" ]
+
+      - name: Check the message for a release that does not exist
+        env:
+          INPUT_VERSION: 9.9.9
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: no onesie release named v9.9.9
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message for latest from a mirror
+        env:
+          INPUT_VERSION: latest
+          INPUT_RELEASE_BASE_URL: https://example.com
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: release-base-url needs a version
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
 
   lint:
     runs-on: ubuntu-latest
