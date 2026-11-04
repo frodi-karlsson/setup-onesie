@@ -23,7 +23,7 @@ Setting `file` or `questions` starts run mode. The Action asks the question abou
 
 - `file` takes a question file name or path, as `onesie -f` does. A bare name such as `pr-why` loads `.onesie/questions/pr-why.yaml` from the checkout, and onesie also ships the sets `moderation`, `personal-data`, `prompt-injection` and `shell-safety`.
 - `questions` takes a question file's YAML inline. Set `file` or `questions`, not both.
-- `state` is required in run mode, and an empty one is refused. It reaches onesie through the environment, never through a shell, so `${{ }}` is safe in it.
+- `state` is required in run mode, and an empty one is refused. It reaches onesie through the environment, never through a shell, so `${{ }}` is safe in it. An issue or pull request body can be empty, and run mode refuses an empty state, so join the body with its title or guard the step with `if:`.
 - `result` is `pass` for exit 0, `fail` for 1, `unsure` for 7, and `no-answer` for any other exit, such as a missing key or a failed API call.
 
 `on-fail` says what a clear no does to the step, and `on-unsure` the same for unsure. Each takes `error`, which fails the step with an error annotation, `warn`, which passes it with a warning, or `continue`, which passes it with no annotation. The defaults are `error` for `on-fail` and `warn` for `on-unsure`. A no answer always fails the step, whatever the two say, so a later step never acts on an answer that did not arrive.
@@ -53,7 +53,10 @@ Set both policies to `continue` to decide in a later step. This labels an issue 
     TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
   with:
     file: moderation
-    state: ${{ github.event.issue.body }}
+    state: |
+      ${{ github.event.issue.title }}
+
+      ${{ github.event.issue.body }}
     on-fail: continue
     on-unsure: continue
 - name: Ask a moderator to look
