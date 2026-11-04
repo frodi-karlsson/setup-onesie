@@ -145,9 +145,9 @@ verify_checksum() {
 	[ -n "$want" ] || die "checksums.txt has no line for $asset"
 
 	if command -v sha256sum >/dev/null 2>&1; then
-		got="$(sha256sum "$tmp/$asset" | awk '{ print $1 }')"
+		got="$(sha256sum <"$tmp/$asset" | awk '{ print $1 }')"
 	else
-		got="$(shasum -a 256 "$tmp/$asset" | awk '{ print $1 }')"
+		got="$(shasum -a 256 <"$tmp/$asset" | awk '{ print $1 }')"
 	fi
 
 	[ "$got" = "$want" ] || die "the sha256 of $asset is $got, but checksums.txt says $want"
