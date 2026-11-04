@@ -13,6 +13,47 @@ A GitHub Action that puts a verified [onesie](https://github.com/frodi-karlsson/
     TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
 ```
 
+## Example: label new issues
+
+This workflow labels each new issue as a bug, a feature request, a question or a docs problem. An issue onesie is unsure about gets `needs-triage`, so a person sorts it instead of a guess.
+
+```yaml
+name: Label new issues
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: frodi-karlsson/setup-onesie@v1
+      - name: Label the issue
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          label="$(onesie --ask kind='what kind of issue is this' \
+            --pick bug,feature,question,docs \
+            --desc bug='something is broken or behaves wrong' \
+            --desc feature='a request for new behaviour' \
+            --desc question='asking how to use it' \
+            --desc docs='a problem in the docs' \
+            --min-confidence 0.7 --fallback needs-triage -r \
+            --state "$TITLE"$'\n\n'"$BODY")"
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label "$label"
+```
+
+- The five labels must exist in the repository.
+- The issue text reaches the shell through `env`, never through `${{ }}` inside `run`. onesie can only answer with one of the labels, so an issue written to trick the model can at most get the wrong label.
+- Anyone who can open an issue starts one API call on your key. On a busy repository, add a condition such as `if: github.event.issue.author_association != 'NONE'`.
+
 ## Inputs
 
 | Input | Default | Meaning |
