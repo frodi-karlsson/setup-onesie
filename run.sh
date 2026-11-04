@@ -64,7 +64,7 @@ ask() {
 		printf '%s\n' "$INPUT_QUESTIONS" >"$file"
 	fi
 
-	# A state file keeps a state of - from meaning stdin, and a long state from passing the argument limit.
+	# onesie reads --state - as stdin, and Git Bash on Windows rewrites an argument that looks like a POSIX path before a native exe sees it.
 	printf '%s' "$INPUT_STATE" >"$tmp/state"
 
 	status=0
@@ -80,7 +80,7 @@ ask() {
 
 write_outputs() {
 	local delimiter
-	delimiter="ONESIE_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+	delimiter="ONESIE_$(random_hex)"
 	[[ "$answer" != *"$delimiter"* ]] || die "onesie's answer holds the output delimiter, so it cannot be set as an output"
 
 	{
@@ -99,7 +99,7 @@ apply_policy() {
 		die "onesie gave no answer, exit $status${reason:+$'\n'$reason}"
 	fi
 
-	cat "$tmp/stderr" >&2
+	print_stderr
 
 	case "$result" in
 	pass) echo "$answer" ;;
@@ -108,12 +108,26 @@ apply_policy() {
 	esac
 }
 
+print_stderr() {
+	[ -s "$tmp/stderr" ] || return 0
+
+	local token
+	token="$(random_hex)"
+	echo "::stop-commands::$token"
+	cat "$tmp/stderr"
+	echo "::$token::"
+}
+
 apply() {
 	case "$1" in
 	error) die "$2" ;;
 	warn) annotate warning "$2" ;;
 	continue) echo "$2" ;;
 	esac
+}
+
+random_hex() {
+	od -An -N8 -tx1 /dev/urandom | tr -d ' \n'
 }
 
 main "$@"
