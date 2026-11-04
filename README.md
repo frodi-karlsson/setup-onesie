@@ -17,7 +17,7 @@ A GitHub Action that puts a verified [onesie](https://github.com/frodi-karlsson/
 
 onesie asks an inference provider with your own key. Store the key as a repository secret, under Settings, Secrets and variables, Actions, and pass it to the step that runs onesie through `env`, as above.
 
-TypeSafe is the default, read from `TYPESAFE_API_KEY`. For another provider, set `ONESIE_PROVIDER` beside its key variable, as in `ONESIE_PROVIDER: openrouter` with `OPENROUTER_API_KEY`. onesie's reference lists [every provider and its key variable](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#profiles-and-providers). Profiles keep a key in a desktop keychain, so a workflow needs none.
+TypeSafe is the default, read from `TYPESAFE_API_KEY`. For another provider, set `ONESIE_PROVIDER` beside its key variable, as in `ONESIE_PROVIDER: openrouter` with `OPENROUTER_API_KEY`. onesie's reference lists [every provider and its key variable](https://github.com/frodi-karlsson/onesie/blob/main/REFERENCE.md#profiles-and-providers). A workflow needs no profile, since onesie reads the key variable when no profile exists.
 
 ## Example: label new issues
 
@@ -58,7 +58,8 @@ jobs:
 
 - The five labels must exist in the repository.
 - The issue text reaches the shell through `env`, never through `${{ }}` inside `run`. onesie can only answer with one of the labels, so an issue written to trick the model can at most get the wrong label.
-- Anyone who can open an issue starts one API call on your key. On a busy repository, add a condition such as `if: github.event.issue.author_association != 'NONE'`.
+- When the API call fails, the step fails and the issue stays unlabelled.
+- Anyone who can open an issue starts one API call on your key. On a busy repository, add a condition such as `if: contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.issue.author_association)`.
 
 ## Example: check pull requests with your own calibrated question
 
@@ -68,15 +69,15 @@ Write the question once, measure it against pull requests you have already judge
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/frodi-karlsson/onesie/main/schema/questions.json
-assert: why.value > 0.7
-abstain_if: why.value > 0.4
+assert: why.value >= 0.7
+abstain_if: why.value >= 0.4
 why:
   ask: does this pull request description explain why the change is needed
   yes_means: it names the problem, the need or the goal the change serves
   no_means: it only lists what changed, or it is empty or a template left unfilled
 ```
 
-A description passes above 0.7, fails at 0.4 or below, and anything between goes to a person.
+A description passes at 0.7 or above, fails below 0.4, and anything between goes to a person.
 
 **2. Calibrate the cuts** on 40 or so past descriptions you label yourself, one JSON line each, as `{"id": 12, "body": "...", "explains_why": true}`:
 
@@ -110,6 +111,10 @@ jobs:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
+          if [ -z "${BODY//[[:space:]]/}" ]; then
+            echo "::error::The description is empty, so it does not say why this change is needed."
+            exit 1
+          fi
           status=0
           onesie -f pr-why -q --state "$BODY" || status=$?
           case $status in
