@@ -1,5 +1,5 @@
 name: 'onesie: Ask a System One model'
-description: Ask a System One model a yes or no, pick or rate question in your workflows, gate on cuts calibrated on your own examples, and act on the answer.
+description: Ask a System One model yes or no, pick or rate questions via onesie in your workflows, gated on cuts you calibrate.
 author: frodi-karlsson
 
 branding:
