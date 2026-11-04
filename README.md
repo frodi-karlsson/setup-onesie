@@ -1,6 +1,8 @@
 # setup-onesie
 
-A GitHub Action that puts a verified [onesie](https://github.com/frodi-karlsson/onesie) binary on `PATH`. It downloads the release archive for the runner, checks its sha256 against the release's `checksums.txt`, checks its build provenance against onesie's release workflow, and refuses the archive when either check fails. It runs on Linux, macOS and Windows runners, on amd64 and arm64.
+Ask a System One model a question about an issue, a pull request or a comment, and get back an answer a workflow can act on: a yes or no with a probability, one of your labels, or a rating. Label new issues, fail a pull request whose description says nothing, or send a borderline comment to a person. The answers come from [onesie](https://github.com/frodi-karlsson/onesie), a command line tool that asks System One models such as TypeSafe's Jev, with cuts you can calibrate on your own examples.
+
+This Action installs onesie on any GitHub hosted runner, Linux, macOS or Windows, on amd64 or arm64. The download is checked against its release checksum and build provenance, and refused when either check fails.
 
 ## Usage
 

@@ -1,9 +1,9 @@
-name: Set up onesie
-description: Install a onesie release, checked against its checksum and build provenance, and add it to PATH.
+name: Ask a System One model about issues and PRs
+description: Ask a yes or no, pick or rate question about an issue, a pull request or a comment, and act on the answer. Installs the onesie CLI, verified.
 author: frodi-karlsson
 
 branding:
-  icon: download
+  icon: check-circle
   color: purple
 
 inputs:
