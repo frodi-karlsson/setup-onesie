@@ -1,0 +1,167 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+        version: [latest, 0.12.0]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up onesie
+        id: setup
+        uses: ./
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Check the installed version
+        shell: bash
+        env:
+          INSTALLED: ${{ steps.setup.outputs.version }}
+          REQUESTED: ${{ matrix.version }}
+        run: |
+          reported="$(onesie --version | head -n 1)"
+          echo "onesie --version reports: $reported"
+          [ "$reported" = "onesie $INSTALLED" ]
+          if [ "$REQUESTED" != "latest" ]; then
+            [ "$INSTALLED" = "$REQUESTED" ]
+          fi
+
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download a release into a local mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.12.0 -R frodi-karlsson/onesie -p onesie_0.12.0_linux_amd64.tar.gz -p checksums.txt -D "$RUNNER_TEMP/mirror"
+
+      - name: Set up onesie from the mirror
+        id: setup
+        uses: ./
+        with:
+          version: 0.12.0
+          release-base-url: file://${{ runner.temp }}/mirror
+
+      - name: Check the installed version
+        env:
+          INSTALLED: ${{ steps.setup.outputs.version }}
+        run: |
+          [ "$INSTALLED" = "0.12.0" ]
+          [ "$(onesie --version | head -n 1)" = "onesie 0.12.0" ]
+
+  tampered:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download a release into a local mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.12.0 -R frodi-karlsson/onesie -p onesie_0.12.0_linux_amd64.tar.gz -p checksums.txt -D "$RUNNER_TEMP/mirror"
+
+      - name: Replace the archive's hash with zeros
+        working-directory: ${{ runner.temp }}/mirror
+        run: |
+          awk '$2 == "onesie_0.12.0_linux_amd64.tar.gz" { $1 = "0000000000000000000000000000000000000000000000000000000000000000" } 1' checksums.txt >checksums.new
+          mv checksums.new checksums.txt
+          cat checksums.txt
+
+      - name: Set up onesie from the tampered mirror
+        id: setup
+        continue-on-error: true
+        uses: ./
+        with:
+          version: 0.12.0
+          release-base-url: file://${{ runner.temp }}/mirror
+
+      - name: Check that the install was refused
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: |
+          [ "$OUTCOME" = "failure" ]
+          if command -v onesie; then exit 1; fi
+
+  bad-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up a release that does not exist
+        id: unknown
+        continue-on-error: true
+        uses: ./
+        with:
+          version: 9.9.9
+
+      - name: Set up latest from a mirror
+        id: latest-mirror
+        continue-on-error: true
+        uses: ./
+        with:
+          version: latest
+          release-base-url: https://example.com
+
+      - name: Check that both were refused
+        env:
+          UNKNOWN: ${{ steps.unknown.outcome }}
+          LATEST_MIRROR: ${{ steps.latest-mirror.outcome }}
+        run: |
+          [ "$UNKNOWN" = "failure" ]
+          [ "$LATEST_MIRROR" = "failure" ]
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the install script
+        run: |
+          shellcheck --version
+          shellcheck install.sh
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          # sha256 of the linux amd64 archive, from actionlint's checksums file at the tag above.
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+
+      - name: Lint the workflows
+        run: '"$RUNNER_TEMP/actionlint" -color'
