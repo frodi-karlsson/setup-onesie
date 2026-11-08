@@ -71,7 +71,11 @@ pick_release() {
 }
 
 in_range() {
-	! version_below "$1" "$2" && { [ -z "$3" ] || version_below "$1" "$3"; }
+	! version_below "$1" "$2" && ! prerelease_of "$1" "$2" && { [ -z "$3" ] || version_below "$1" "$3"; }
+}
+
+prerelease_of() {
+	[ "$1" != "${1%%-*}" ] && [ "$(core "$1")" = "$(core "$2")" ]
 }
 
 version_below() {
