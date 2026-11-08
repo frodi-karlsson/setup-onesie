@@ -1,0 +1,115 @@
+name: Compatibility
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: A onesie release to check instead of the newest, such as 0.15.0-rc.1.
+        default: ''
+  pull_request:
+    paths: [.github/workflows/compat.yml]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  run-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Choose the onesie release to check
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          version="$REQUESTED"
+          [ -n "$version" ] || version="$(gh release view -R frodi-karlsson/onesie --json tagName --jq .tagName)"
+          echo "version=${version#v}" >>"$GITHUB_OUTPUT"
+
+      - name: Set up the onesie release to check
+        uses: ./
+        with:
+          version: ${{ steps.target.outputs.version }}
+
+      - name: Write the mocked answers
+        run: |
+          echo '{"why":0.9}' >"$RUNNER_TEMP/pass.json"
+          echo '{"why":0.1}' >"$RUNNER_TEMP/fail.json"
+          echo '{"why":0.5}' >"$RUNNER_TEMP/unsure.json"
+          echo '{"kind":{"value":"bug","confidence":0.9}}' >"$RUNNER_TEMP/sure.json"
+          echo '{"kind":{"value":"bug","confidence":0.5}}' >"$RUNNER_TEMP/low.json"
+          echo '{"hostile":0.05,"spam":0.02,"tone":"civil"}' >"$RUNNER_TEMP/civil.json"
+          echo '{"hostile":0.95,"spam":0.02,"tone":"abusive"}' >"$RUNNER_TEMP/hostile.json"
+
+      - name: Run the run mode cases
+        id: cases
+        env:
+          INPUT_ON_FAIL: continue
+          INPUT_ON_UNSURE: continue
+        run: |
+          status=0
+          ask() {
+            out="$RUNNER_TEMP/$1.out"
+            : >"$out"
+            ONESIE_MOCK="$RUNNER_TEMP/$1.json" GITHUB_OUTPUT="$out" bash ./run.sh || true
+            got="$(sed -n 's/^result=//p' "$out") $(sed -n 's/^exit-code=//p' "$out")"
+            answer="$(sed -n '/^answer<</{n;p;}' "$out")"
+          }
+          expect() {
+            if [ "$2" = "$3" ]; then
+              echo "$1: $2"
+            else
+              echo "$1 is $2, but should be $3"
+              status=1
+            fi
+          }
+
+          export INPUT_STATE='It fixes a crash on empty input, which users hit on every fresh install.'
+          export INPUT_QUESTIONS=$'assert: why.value >= 0.7\nabstain_if: why.value >= 0.4\nwhy:\n  ask: does this pull request description explain why the change is needed'
+          ask pass
+          expect pass "$got" "pass 0"
+          expect "the pass value" "$(jq -r .why.value <<<"$answer")" "0.9"
+          ask fail
+          expect fail "$got" "fail 1"
+          ask unsure
+          expect unsure "$got" "unsure 7"
+
+          export INPUT_STATE='The app crashes when I open a file with an empty name.'
+          export INPUT_QUESTIONS=$'kind:\n  ask: what kind of issue is this\n  pick: [bug, feature, question, docs]\n  min_confidence: 0.7\n  fallback: needs-triage'
+          ask sure
+          expect sure "$got $(jq -r .kind.decision <<<"$answer")" "pass 0 bug"
+          ask low
+          expect low "$got $(jq -r .kind.decision <<<"$answer")" "pass 0 needs-triage"
+
+          unset INPUT_QUESTIONS
+          export INPUT_FILE=moderation
+          export INPUT_STATE='Thanks for the fix, it works for me now.'
+          ask civil
+          expect civil "$got" "pass 0"
+          export INPUT_STATE='Only an idiot would write code like this.'
+          ask hostile
+          expect hostile "$got $(jq -r .tone.value <<<"$answer")" "fail 1 abusive"
+
+          exit "$status"
+
+      - name: Open an issue for the failure
+        if: always() && steps.cases.outcome == 'failure' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: onesie ${{ steps.target.outputs.version }} breaks run mode
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          titles="$(gh issue list -R "$GITHUB_REPOSITORY" --state all --limit 100 --search "\"$TITLE\" in:title" --json title --jq '.[].title')"
+          if grep -qxF "$TITLE" <<<"$titles"; then
+            echo "An issue is already titled $TITLE, open or closed, so none is opened"
+            exit 0
+          fi
+          gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The compatibility check failed: $RUN_URL"
