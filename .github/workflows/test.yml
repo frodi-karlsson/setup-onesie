@@ -355,6 +355,18 @@ jobs:
           fi
           exit "$status"
 
+      - name: Check that the state reaches onesie on stdin from a file
+        # --print-request is gone in onesie v0.15.0, so this runs against 0.12.0 only.
+        if: matrix.version == '0.12.0'
+        shell: bash
+        env:
+          STATE: It fixes a crash on /usr/local/bin paths, which users hit on every fresh install.
+        run: |
+          printf '%s' "$STATE" >"$RUNNER_TEMP/state"
+          body="$(onesie -f moderation --print-request --state - <"$RUNNER_TEMP/state")"
+          echo "$body"
+          grep -qF "\"state\":\"$STATE\"" <<<"$body"
+
   run-pick:
     strategy:
       fail-fast: false
@@ -935,6 +947,53 @@ jobs:
           fi
           cat "$out"
           grep -qF "$EXPECTED" "$out"
+
+  run-state:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check how run.sh hands onesie the state
+        shell: bash
+        env:
+          INPUT_FILE: moderation
+          INPUT_STATE: |
+            First line with /usr/local/bin and C:\Users\me, café.
+            Second line.
+        run: |
+          fake="$RUNNER_TEMP/fake-onesie"
+          mkdir -p "$fake"
+          cat >"$fake/onesie" <<'SCRIPT'
+          #!/usr/bin/env bash
+          printf '%s\n' "$@" >"$FAKE_RECORD/args"
+          cat >"$FAKE_RECORD/stdin"
+          echo '{"why":{"value":0.9}}'
+          SCRIPT
+          chmod +x "$fake/onesie"
+          export FAKE_RECORD="$RUNNER_TEMP/fake-record"
+          mkdir -p "$FAKE_RECORD"
+          : >"$RUNNER_TEMP/output"
+
+          PATH="$fake:$PATH" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./run.sh
+
+          args=" $(tr '\n' ' ' <"$FAKE_RECORD/args")"
+          echo "onesie got:$args"
+          if [[ "$args" != *" --state - "* ]] || [[ "$args" == *"--state-file"* ]]; then
+            echo "run.sh did not pass the state with --state -"
+            exit 1
+          fi
+          if ! printf '%s' "$INPUT_STATE" | cmp - "$FAKE_RECORD/stdin"; then
+            echo "the state onesie read differs from INPUT_STATE"
+            exit 1
+          fi
+          grep -qx 'result=pass' "$RUNNER_TEMP/output"
 
   lint:
     runs-on: ubuntu-latest

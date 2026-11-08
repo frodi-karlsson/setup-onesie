@@ -64,11 +64,11 @@ ask() {
 		printf '%s\n' "$INPUT_QUESTIONS" >"$file"
 	fi
 
-	# onesie reads --state - as stdin, and Git Bash on Windows rewrites an argument that looks like a POSIX path before a native exe sees it.
+	# Git Bash on Windows rewrites an argument that looks like a POSIX path, and onesie v0.15.0 drops --state-file, so the state reaches onesie on stdin from a file.
 	printf '%s' "$INPUT_STATE" >"$tmp/state"
 
 	status=0
-	answer="$(onesie -f "$file" -o json --state-file "$tmp/state" </dev/null 2>"$tmp/stderr")" || status=$?
+	answer="$(onesie -f "$file" -o json --state - <"$tmp/state" 2>"$tmp/stderr")" || status=$?
 
 	case "$status" in
 	0) result="pass" ;;
