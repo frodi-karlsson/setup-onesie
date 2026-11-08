@@ -652,6 +652,85 @@ jobs:
           cat "$out"
           grep -qF "$EXPECTED" "$out"
 
+  # SETUP_ONESIE_TEST_RANGE overrides the range in lib.sh for the step that sets it. It holds MIN BELOW, BELOW may be left out, and only these tests set it.
+  range-helpers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the range helpers in lib.sh
+        shell: bash
+        run: |
+          # range checks start
+          set -eo pipefail
+          . ./lib.sh
+          status=0
+          expect() {
+            if [ "$2" = "$3" ]; then
+              echo "$1: $2"
+            else
+              echo "$1 is '$2', but should be '$3'"
+              status=1
+            fi
+          }
+          yes_no() {
+            if "$@"; then echo yes; else echo no; fi
+          }
+          range_with() {
+            SETUP_ONESIE_TEST_RANGE="$1" supported_range
+            echo "$min,$below"
+          }
+          compact='[{"url":"x","tag_name":"v0.15.0","name":"a","draft":false,"prerelease":false,"body":"says \"draft\": true and \"tag_name\": \"v9.9.9\""},{"tag_name":"v0.14.2","draft":false,"prerelease":false,"assets":[{"name":"onesie.zip"}]},{"tag_name":"v0.14.10-rc.1","draft":false,"prerelease":true},{"tag_name":"v0.16.0","draft":true,"prerelease":false},{"tag_name":"v0.13.0","draft":false,"prerelease":false},{"tag_name":"nightly","draft":false,"prerelease":false},{"tag_name":"v0.11.0","draft":false,"prerelease":false}]'
+          pretty='[
+            {
+              "tag_name": "v0.9.0",
+              "draft": false,
+              "prerelease": false
+            },
+            {
+              "tag_name": "v0.10.1",
+              "draft": false,
+              "prerelease": false
+            }
+          ]'
+          expect "the lines of a compact list" "$(release_lines <<<"$compact" | tr '\n' ,)" "v0.15.0 false false,v0.14.2 false false,v0.14.10-rc.1 false true,v0.16.0 true false,v0.13.0 false false,nightly false false,v0.11.0 false false,"
+          expect "the lines of a pretty list" "$(release_lines <<<"$pretty" | tr '\n' ,)" "v0.9.0 false false,v0.10.1 false false,"
+          expect "the lines of an error body" "$(release_lines <<<'{"message":"Not Found"}')" ""
+          expect "the newest with no upper bound" "$(release_lines <<<"$compact" | pick_release 0.12.0 "")" "v0.15.0"
+          expect "the newest below 0.15.0" "$(release_lines <<<"$compact" | pick_release 0.12.0 0.15.0)" "v0.14.2"
+          expect "the newest below 0.14.0" "$(release_lines <<<"$compact" | pick_release 0.12.0 0.14.0)" "v0.13.0"
+          expect "the newest in an empty range" "$(release_lines <<<"$compact" | pick_release 9.0.0 9.1.0)" ""
+          expect "the newest of a pretty list" "$(release_lines <<<"$pretty" | pick_release 0.0.0 "")" "v0.10.1"
+          expect "0.9.0 below 0.10.0" "$(yes_no version_below 0.9.0 0.10.0)" "yes"
+          expect "0.10.0 below 0.9.0" "$(yes_no version_below 0.10.0 0.9.0)" "no"
+          expect "0.12.0 below 0.12.0" "$(yes_no version_below 0.12.0 0.12.0)" "no"
+          expect "v1.0.0 below 0.99.99" "$(yes_no version_below v1.0.0 0.99.99)" "no"
+          expect "0.15.0-rc.1 below 0.15.0" "$(yes_no version_below 0.15.0-rc.1 0.15.0)" "no"
+          expect "0.08.0 below 0.9.0" "$(yes_no version_below 0.08.0 0.9.0)" "yes"
+          expect "0.12.0 in 0.12.0 or later" "$(yes_no in_range 0.12.0 0.12.0 "")" "yes"
+          expect "0.11.9 in 0.12.0 or later" "$(yes_no in_range 0.11.9 0.12.0 "")" "no"
+          expect "v0.14.9 in 0.12.0 up to 0.15.0" "$(yes_no in_range v0.14.9 0.12.0 0.15.0)" "yes"
+          expect "v0.15.0 in 0.12.0 up to 0.15.0" "$(yes_no in_range v0.15.0 0.12.0 0.15.0)" "no"
+          expect "the message with both bounds" "$(no_release_message 0.12.0 0.15.0 v0.14.2)" "no onesie release between 0.12.0 and 0.15.0 was found. Pin a version such as 0.14.2"
+          expect "the message with no upper bound" "$(no_release_message 0.12.0 "" v0.14.2)" "no onesie release of 0.12.0 or later was found. Pin a version such as 0.14.2"
+          expect "the message with no release at all" "$(no_release_message 0.12.0 "" "")" "no onesie release of 0.12.0 or later was found."
+          expect "the warning with both bounds" "$(outside_range_message v0.15.0 0.12.0 0.15.0)" "onesie 0.15.0 is outside the range setup-onesie supports, 0.12.0 up to 0.15.0"
+          expect "the warning with no upper bound" "$(outside_range_message 0.11.0 0.12.0 "")" "onesie 0.11.0 is outside the range setup-onesie supports, 0.12.0 or later"
+          expect "the range in lib.sh" "$(range_with "")" "0.12.0,"
+          expect "the range from the override" "$(range_with "0.13.0 0.14.0")" "0.13.0,0.14.0"
+          expect "the range from an override with no upper bound" "$(range_with 0.13.0)" "0.13.0,"
+          expect "an override that is not a version" "$(range_with "0.13 x")" "::error::SETUP_ONESIE_TEST_RANGE must be MIN or MIN BELOW, each a version such as 0.12.0, not 0.13 x"
+          expect "an override with three values" "$(range_with "0.12.0 0.13.0 0.14.0")" "::error::SETUP_ONESIE_TEST_RANGE must be MIN or MIN BELOW, each a version such as 0.12.0, not 0.12.0 0.13.0 0.14.0"
+          exit "$status"
+          # range checks end
+
   lint:
     runs-on: ubuntu-latest
     steps:
