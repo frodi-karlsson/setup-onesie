@@ -35,11 +35,14 @@ jobs:
           echo "version=${version#v}" >>"$GITHUB_OUTPUT"
 
       - name: Set up the onesie release to check
+        id: setup
+        continue-on-error: true
         uses: ./
         with:
           version: ${{ steps.target.outputs.version }}
 
       - name: Write the mocked answers
+        if: steps.setup.outcome == 'success'
         run: |
           echo '{"why":0.9}' >"$RUNNER_TEMP/pass.json"
           echo '{"why":0.1}' >"$RUNNER_TEMP/fail.json"
@@ -51,6 +54,7 @@ jobs:
 
       - name: Run the run mode cases
         id: cases
+        if: steps.setup.outcome == 'success'
         env:
           INPUT_ON_FAIL: continue
           INPUT_ON_UNSURE: continue
@@ -101,10 +105,11 @@ jobs:
           exit "$status"
 
       - name: Open an issue for the failure
-        if: always() && steps.cases.outcome == 'failure' && github.event_name != 'pull_request'
+        if: always() && (steps.setup.outcome == 'failure' || steps.cases.outcome == 'failure') && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: onesie ${{ steps.target.outputs.version }} breaks run mode
+          TITLE: onesie ${{ steps.target.outputs.version }} breaks setup-onesie
+          FAILED_STEP: ${{ steps.setup.outcome == 'failure' && 'Set up the onesie release to check' || 'Run the run mode cases' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           titles="$(gh issue list -R "$GITHUB_REPOSITORY" --state all --limit 100 --search "\"$TITLE\" in:title" --json title --jq '.[].title')"
@@ -112,4 +117,11 @@ jobs:
             echo "An issue is already titled $TITLE, open or closed, so none is opened"
             exit 0
           fi
-          gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The compatibility check failed: $RUN_URL"
+          gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The compatibility check failed in the step $FAILED_STEP: $RUN_URL"
+
+      # continue-on-error keeps a failed setup from skipping the issue, so this step fails the run for it.
+      - name: Fail the run when setup failed
+        if: always() && steps.setup.outcome == 'failure'
+        run: |
+          echo "Setting up the onesie release failed, so the run mode cases did not run"
+          exit 1
