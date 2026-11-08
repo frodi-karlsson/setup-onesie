@@ -1006,6 +1006,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check that all-checks needs every other job
+        run: |
+          jobs="$(awk '/^jobs:/ { in_jobs = 1; next } in_jobs && /^  [a-z0-9-]+:$/ { sub(":", ""); print $1 }' .github/workflows/test.yml | grep -vx all-checks | sort)"
+          needs="$(awk '/^  all-checks:/ { in_job = 1 } in_job && /^    needs:/ { in_needs = 1; next } in_needs && /^      - / { print $2; next } in_needs { exit }' .github/workflows/test.yml | sort)"
+          if [ "$jobs" != "$needs" ]; then
+            echo "::error::all-checks must need every job and nothing else. Jobs: ${jobs//$'\n'/ }. Needs: ${needs//$'\n'/ }"
+            exit 1
+          fi
+
       - name: Lint the scripts
         run: |
           shellcheck --version
@@ -1024,3 +1033,36 @@ jobs:
 
       - name: Lint the workflows
         run: '"$RUNNER_TEMP/actionlint" -color'
+
+  all-checks:
+    # The branch ruleset requires only this job, so renaming a job or a matrix leg never blocks a merge.
+    if: always()
+    needs:
+      - install
+      - mirror
+      - tampered
+      - bad-inputs
+      - run-outcomes
+      - run-pick
+      - run-file
+      - run-no-answer
+      - run-refusals
+      - range-helpers
+      - range-latest
+      - range-outside
+      - range-none
+      - run-state
+      - lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job ended with $result"
+              exit 1
+            fi
+          done
