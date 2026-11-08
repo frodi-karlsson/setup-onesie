@@ -39,9 +39,9 @@ jobs:
           INSTALLED: ${{ steps.setup.outputs.version }}
           REQUESTED: ${{ matrix.version }}
         run: |
-          reported="$(onesie --version | head -n 1)"
-          echo "onesie --version reports: $reported"
-          [ "$reported" = "onesie $INSTALLED" ]
+          reported="$(onesie version -o json)"
+          echo "onesie version -o json reports: $reported"
+          grep -qF "\"version\":\"$INSTALLED\"" <<<"$reported"
           if [ "$REQUESTED" != "latest" ]; then
             [ "$INSTALLED" = "$REQUESTED" ]
           fi
@@ -71,7 +71,7 @@ jobs:
           INSTALLED: ${{ steps.setup.outputs.version }}
         run: |
           [ "$INSTALLED" = "0.12.0" ]
-          [ "$(onesie --version | head -n 1)" = "onesie 0.12.0" ]
+          grep -qF '"version":"0.12.0"' <<<"$(onesie version -o json)"
 
   tampered:
     runs-on: ubuntu-latest
@@ -344,7 +344,7 @@ jobs:
           expect unsure-continue "$UNSURE_CONTINUE" "success unsure 7"
           expect "the pass value" "$PASS_VALUE" "0.9"
           if [ "$REQUESTED" = "latest" ]; then
-            expect "the version" "$(onesie --version | head -n 1)" "onesie $PASS_VERSION"
+            expect "the version" "$(onesie version -o json | grep -oE '"version":"[^"]*"')" "\"version\":\"$PASS_VERSION\""
           else
             expect "the version" "$PASS_VERSION" "$REQUESTED"
           fi
@@ -792,7 +792,7 @@ jobs:
           BELOW: ${{ steps.bound.outputs.below }}
         run: |
           echo "installed $INSTALLED, newest $NEWEST, bound $BELOW"
-          [ "$(onesie --version | head -n 1)" = "onesie $INSTALLED" ]
+          grep -qF "\"version\":\"$INSTALLED\"" <<<"$(onesie version -o json)"
           [ "$INSTALLED" != "$BELOW" ]
           [ "$(printf '%s\n' "$INSTALLED" "$BELOW" | sort -V | head -n 1)" = "$INSTALLED" ]
           [ "$(printf '%s\n' 0.12.0 "$INSTALLED" | sort -V | head -n 1)" = "0.12.0" ]

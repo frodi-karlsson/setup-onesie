@@ -195,9 +195,14 @@ smoke_test() {
 	local binary="$1/onesie" reported
 	[ -f "$binary" ] || binary="$1/onesie.exe"
 
-	reported="$("$binary" --version)" || die "$binary --version failed"
-	[ "${reported%%$'\n'*}" = "onesie ${version#v}" ] ||
-		die "$binary --version does not report ${version#v}"
+	reported="$("$binary" version -o json)" || die "$binary version -o json failed"
+	reported="$(reported_version <<<"$reported")"
+	[ "${reported#v}" = "${version#v}" ] ||
+		die "$binary version -o json reports ${reported:-no version}, not ${version#v}"
+}
+
+reported_version() {
+	{ grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' || true; } | head -n 1 | sed -E 's/.*"([^"]*)"$/\1/'
 }
 
 main "$@"

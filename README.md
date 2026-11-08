@@ -278,7 +278,7 @@ gh attestation verify onesie_0.12.0_linux_amd64.tar.gz \
 
 The provenance check needs `gh`, which GitHub hosted runners ship. On a runner without it, install `gh` or set `verify-provenance: false`.
 
-After unpacking, `onesie --version` must report the version installed. The binary is kept in the runner's tool cache, so a self hosted runner reuses it on the next run.
+After unpacking, `onesie version -o json` must report the version installed. The binary is kept in the runner's tool cache, so a self hosted runner reuses it on the next run.
 
 ## Mirrors
 
