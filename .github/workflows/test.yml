@@ -191,6 +191,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        version: [0.12.0, latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -211,7 +212,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/pass.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -226,7 +227,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/fail.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -241,7 +242,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/fail.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -256,7 +257,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/fail.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -272,7 +273,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/unsure.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -287,7 +288,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/unsure.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -302,7 +303,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/unsure.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             assert: why.value >= 0.7
             abstain_if: why.value >= 0.4
@@ -321,8 +322,9 @@ jobs:
           UNSURE_ERROR: ${{ steps.unsure-error.outcome }} ${{ steps.unsure-error.outputs.result }} ${{ steps.unsure-error.outputs.exit-code }}
           UNSURE_WARN: ${{ steps.unsure-warn.outcome }} ${{ steps.unsure-warn.outputs.result }} ${{ steps.unsure-warn.outputs.exit-code }}
           UNSURE_CONTINUE: ${{ steps.unsure-continue.outcome }} ${{ steps.unsure-continue.outputs.result }} ${{ steps.unsure-continue.outputs.exit-code }}
-          PASS_ANSWER: ${{ steps.pass.outputs.answer }}
+          PASS_VALUE: ${{ fromJSON(steps.pass.outputs.answer).why.value }}
           PASS_VERSION: ${{ steps.pass.outputs.version }}
+          REQUESTED: ${{ matrix.version }}
         run: |
           status=0
           expect() {
@@ -340,8 +342,12 @@ jobs:
           expect unsure-error "$UNSURE_ERROR" "failure unsure 7"
           expect unsure-warn "$UNSURE_WARN" "success unsure 7"
           expect unsure-continue "$UNSURE_CONTINUE" "success unsure 7"
-          expect "the pass answer" "$PASS_ANSWER" '{"model":"jev-latest","why":{"value":0.9}}'
-          expect "the version" "$PASS_VERSION" "0.12.0"
+          expect "the pass value" "$PASS_VALUE" "0.9"
+          if [ "$REQUESTED" = "latest" ]; then
+            expect "the version" "$(onesie --version | head -n 1)" "onesie $PASS_VERSION"
+          else
+            expect "the version" "$PASS_VERSION" "$REQUESTED"
+          fi
           temp="${RUNNER_TEMP//\\//}"
           if compgen -G "$temp/setup-onesie.*"; then
             echo "a temp directory was left in RUNNER_TEMP"
@@ -350,6 +356,10 @@ jobs:
           exit "$status"
 
   run-pick:
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [0.12.0, latest]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -368,7 +378,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/sure.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             kind:
               ask: what kind of issue is this
@@ -383,7 +393,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/unsure.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           questions: |
             kind:
               ask: what kind of issue is this
@@ -403,6 +413,10 @@ jobs:
           [ "$UNSURE" = "pass bug 0.5 needs-triage" ]
 
   run-file:
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [0.12.0, latest]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -421,7 +435,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/civil.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           file: moderation
           state: Thanks for the fix, it works for me now.
 
@@ -432,7 +446,7 @@ jobs:
         env:
           ONESIE_MOCK: ${{ runner.temp }}/hostile.json
         with:
-          version: 0.12.0
+          version: ${{ matrix.version }}
           file: moderation
           state: Only an idiot would write code like this.
 
