@@ -240,9 +240,11 @@ onesie's exit codes are 0 when the question passed, 1 when it clearly failed and
 
 ## Inputs
 
+`latest` installs the newest onesie release setup-onesie supports, 0.12.0 or later, and a `version` outside that range installs with a warning. The range only holds `latest` back from a breaking onesie release, so pin `version` to keep a workflow's own `run: onesie` steps working across one.
+
 | Input | Default | Meaning |
 |---|---|---|
-| `version` | `latest` | A release such as `0.12.0` or `v0.12.0`, or `latest` |
+| `version` | `latest` | A release such as `0.12.0` or `v0.12.0`, or `latest` for the newest supported release |
 | `verify-provenance` | `true` | Check the archive with `gh attestation verify`. Set it to `false` to skip the check |
 | `release-base-url` | empty | Where the archives and `checksums.txt` live, for a mirror. Empty means the GitHub release of `version` |
 | `token` | `${{ github.token }}` | Used to find the latest release and to verify provenance |
@@ -302,6 +304,14 @@ On GitHub Enterprise Server, `github.token` does not reach github.com, where one
 ```yaml
 - uses: frodi-karlsson/setup-onesie@<full commit sha> # v1.0.0
 ```
+
+## Maintenance
+
+`lib.sh` holds the range: `min_version` is the oldest supported onesie release, and `below_version` is the first unsupported one, or empty for no upper bound. Keep the line under [Inputs](#inputs) in step with them.
+
+A weekly workflow, `compat.yml`, installs onesie's newest release and runs the run mode cases against it. When they fail, it opens an issue titled `onesie VERSION breaks run mode`, unless an issue with that title exists, open or closed. Closing the issue acknowledges the break, and the check never reopens it for that version. Set `below_version` to that release's minor, such as `0.15.0`, and release setup-onesie, then clear it in a later release once run mode adapts. To check a release candidate before it ships, run the workflow by hand with its `version` input, such as `0.15.0-rc.1`.
+
+GitHub disables a scheduled workflow after 60 days without activity in the repository. Enable it again from its page under Actions, or with `gh workflow enable compat.yml`.
 
 ## License
 

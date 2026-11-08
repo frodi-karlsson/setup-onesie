@@ -8,7 +8,7 @@ branding:
 
 inputs:
   version:
-    description: The onesie release to install, such as 0.12.0 or v0.12.0, or latest.
+    description: The onesie release to install, such as 0.12.0 or v0.12.0, or latest for the newest release setup-onesie supports.
     default: latest
   verify-provenance:
     description: Check the archive against the provenance of onesie's release workflow with gh attestation verify.
