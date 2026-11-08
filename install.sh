@@ -13,7 +13,9 @@ main() {
 	check_runner
 	check_inputs
 	platform
+	supported_range
 	resolve_version
+	warn_outside_range
 
 	tmp="$(mktemp -d "$RUNNER_TEMP/setup-onesie.XXXXXX")"
 	trap 'rm -rf "$tmp"' EXIT
@@ -80,22 +82,31 @@ resolve_version() {
 }
 
 latest_tag() {
-	version=""
+	list_releases || die "could not ask GitHub for the onesie releases"
+	version="$(release_lines <<<"$releases" | pick_release "$min" "$below")"
+	[ -n "$version" ] ||
+		die "$(no_release_message "$min" "$below" "$(release_lines <<<"$releases" | pick_release 0.0.0 "")")"
+}
+
+list_releases() {
+	local path="repos/$repo/releases?per_page=100"
+	releases=""
 	if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
 		local attempt
 		for attempt in 1 2 3; do
-			version="$(gh api "repos/$repo/releases/latest" --jq .tag_name)" && break
-			version=""
+			releases="$(gh api "$path")" && return
 			[ "$attempt" -eq 3 ] || sleep "$attempt"
 		done
-	else
-		local auth=()
-		[ -z "${GH_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GH_TOKEN")
-		version="$(curl -fsSL --retry 3 ${auth[@]+"${auth[@]}"} --url "https://api.github.com/repos/$repo/releases/latest" |
-			sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')" || version=""
+		return 1
 	fi
 
-	[ -n "$version" ] || die "could not ask GitHub for the latest onesie release"
+	local auth=()
+	[ -z "${GH_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GH_TOKEN")
+	releases="$(curl -fsSL --retry 3 ${auth[@]+"${auth[@]}"} --url "https://api.github.com/$path")"
+}
+
+warn_outside_range() {
+	in_range "$version" "$min" "$below" || annotate warning "$(outside_range_message "$version" "$min" "$below")"
 }
 
 install() {

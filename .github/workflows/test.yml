@@ -731,6 +731,197 @@ jobs:
           exit "$status"
           # range checks end
 
+  range-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Find a bound that excludes the newest release
+        id: bound
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          newest="$(gh release view -R frodi-karlsson/onesie --json tagName --jq .tagName)"
+          newest="${newest#v}"
+          IFS=. read -r major minor _ <<<"$newest"
+          echo "newest=$newest" >>"$GITHUB_OUTPUT"
+          echo "below=$major.$minor.0" >>"$GITHUB_OUTPUT"
+
+      - name: Set up latest below the bound
+        id: setup
+        uses: ./
+        env:
+          SETUP_ONESIE_TEST_RANGE: 0.12.0 ${{ steps.bound.outputs.below }}
+
+      - name: Check that latest stayed inside the range
+        env:
+          INSTALLED: ${{ steps.setup.outputs.version }}
+          NEWEST: ${{ steps.bound.outputs.newest }}
+          BELOW: ${{ steps.bound.outputs.below }}
+        run: |
+          echo "installed $INSTALLED, newest $NEWEST, bound $BELOW"
+          [ "$(onesie --version | head -n 1)" = "onesie $INSTALLED" ]
+          [ "$INSTALLED" != "$BELOW" ]
+          [ "$(printf '%s\n' "$INSTALLED" "$BELOW" | sort -V | head -n 1)" = "$INSTALLED" ]
+          [ "$(printf '%s\n' 0.12.0 "$INSTALLED" | sort -V | head -n 1)" = "0.12.0" ]
+
+  range-outside:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write the mocked answer
+        run: echo '{"why":0.9}' >"$RUNNER_TEMP/pass.json"
+
+      - name: Set up a release below the range
+        id: below
+        uses: ./
+        env:
+          SETUP_ONESIE_TEST_RANGE: 0.13.0
+        with:
+          version: 0.12.0
+
+      - name: Ask with a release above the range
+        id: above
+        uses: ./
+        env:
+          SETUP_ONESIE_TEST_RANGE: 0.12.0 0.13.0
+          ONESIE_MOCK: ${{ runner.temp }}/pass.json
+        with:
+          version: 0.13.0
+          questions: |
+            why:
+              ask: does this pull request description explain why the change is needed
+          state: It fixes a crash on empty input, which users hit on every fresh install.
+
+      - name: Check that both installed
+        env:
+          BELOW: ${{ steps.below.outcome }} ${{ steps.below.outputs.version }}
+          ABOVE: ${{ steps.above.outcome }} ${{ steps.above.outputs.version }} ${{ steps.above.outputs.result }}
+        run: |
+          echo "below: $BELOW"
+          echo "above: $ABOVE"
+          [ "$BELOW" = "success 0.12.0" ]
+          [ "$ABOVE" = "success 0.13.0 pass" ]
+
+      - name: Check the warning in setup mode for a release below the range
+        env:
+          INPUT_VERSION: 0.12.0
+          SETUP_ONESIE_TEST_RANGE: 0.13.0
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: '::warning::onesie 0.12.0 is outside the range setup-onesie supports, 0.13.0 or later'
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if ! GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh failed, but it should have installed with a warning"
+            exit 1
+          fi
+          cat "$out"
+          grep -qxF "$EXPECTED" "$out"
+
+      - name: Check the warning in run mode for a release above the range
+        env:
+          INPUT_VERSION: 0.13.0
+          INPUT_QUESTIONS: |
+            why:
+              ask: does this pull request description explain why the change is needed
+          INPUT_STATE: It fixes a crash on empty input, which users hit on every fresh install.
+          SETUP_ONESIE_TEST_RANGE: 0.12.0 0.13.0
+          ONESIE_MOCK: ${{ runner.temp }}/pass.json
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: '::warning::onesie 0.13.0 is outside the range setup-onesie supports, 0.12.0 up to 0.13.0'
+        run: |
+          out="$RUNNER_TEMP/run-mode.out"
+          path="$RUNNER_TEMP/run-mode-path"
+          : >"$path"
+          if ! {
+            bash ./run.sh check &&
+              GITHUB_PATH="$path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh &&
+              PATH="$(head -n 1 "$path"):$PATH" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./run.sh
+          } >"$out" 2>&1; then
+            cat "$out"
+            echo "the run mode leg failed, but it should have answered with a warning"
+            exit 1
+          fi
+          cat "$out"
+          grep -qxF "$EXPECTED" "$out"
+          grep -qF '"why":{"value":0.9}' "$out"
+
+      - name: Check that a release inside the range writes no warning
+        env:
+          INPUT_VERSION: 0.12.0
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if ! GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh failed, but it should have installed"
+            exit 1
+          fi
+          cat "$out"
+          if grep -q '^::warning::' "$out"; then exit 1; fi
+
+  range-none:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up latest from an empty range
+        id: setup
+        continue-on-error: true
+        uses: ./
+        env:
+          SETUP_ONESIE_TEST_RANGE: 9.0.0 9.1.0
+
+      - name: Check that the install was refused
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: |
+          [ "$OUTCOME" = "failure" ]
+          if command -v onesie; then exit 1; fi
+
+      - name: Check the message with both bounds
+        env:
+          INPUT_VERSION: latest
+          SETUP_ONESIE_TEST_RANGE: 9.0.0 9.1.0
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: '::error::no onesie release between 9.0.0 and 9.1.0 was found. Pin a version such as '
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
+      - name: Check the message with no upper bound
+        env:
+          INPUT_VERSION: latest
+          SETUP_ONESIE_TEST_RANGE: 9.0.0
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: '::error::no onesie release of 9.0.0 or later was found. Pin a version such as '
+        run: |
+          out="$RUNNER_TEMP/install.out"
+          if GITHUB_PATH="$RUNNER_TEMP/path" GITHUB_OUTPUT="$RUNNER_TEMP/output" bash ./install.sh >"$out" 2>&1; then
+            cat "$out"
+            echo "install.sh succeeded, but it should have refused"
+            exit 1
+          fi
+          cat "$out"
+          grep -qF "$EXPECTED" "$out"
+
   lint:
     runs-on: ubuntu-latest
     steps:
