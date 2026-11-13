@@ -261,7 +261,7 @@ onesie's exit codes are 0 when the question passed, 1 when it clearly failed and
 | `version` | `0.12.0` | The version installed, without the `v` |
 | `result` | `unsure` | In run mode, `pass` for exit 0, `fail` for 1, `unsure` for 7 and `no-answer` for any other exit |
 | `exit-code` | `7` | In run mode, onesie's exit code |
-| `answer` | `{"model":"jev-latest","why":{"value":0.52}}` | In run mode, onesie's `-o json` line, for scores and picks |
+| `answer` | `{"verdict":"unsure","model":"jev-latest","why":{"value":0.52}}` | In run mode, onesie's `-o json` line, for scores and picks |
 
 ## Verification
 
